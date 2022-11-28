@@ -5,7 +5,7 @@ from django.utils.translation import gettext_lazy as _
 
 
 @admin.register(Post)
-class PostAdmin(SortableAdminMixin, admin.ModelAdmin):
+class PostAdmin(admin.ModelAdmin):
     list_display = ('title', 'author', 'image', 'created_at', 'updated_at')
     list_filter = ('author',)
     search_fields = ('title', 'author__username')
