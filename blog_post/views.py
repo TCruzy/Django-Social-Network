@@ -5,17 +5,18 @@ from blog_post.serializers import PostListSerializer, PostRetrieveSerializer, Co
     CommentsListSerializer, CommentsLikesListSerializer, CommentsLikesRetrieveSerializer
 from djangoProject.utils.serializers import SerializerFactory
 
-from django.db.models import Count, F, Value
-from django.db.models.functions import Length, Upper
-from django.db.models.lookups import GreaterThan
+from django.db.models import F, Avg, Max, Min, Count
 
 
 class PostViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = Post.objects.all(
-    ).select_related('author').annotate(
-        likes_count=Count('post_likes'),
-        comments_count=Count('comments'),
+    queryset = Post.objects.annotate(
+        likes_count=Count('post_likes__post'),
+        comments_count=Count('comments__post'),
+    ).aggregate(
+        Max('likes_count'),
+        Max('comments_count'),
     )
+
     serializer_class = SerializerFactory(
         default=PostRetrieveSerializer,
         list=PostListSerializer,
@@ -23,11 +24,13 @@ class PostViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class PostLikesViewSet(viewsets.ReadOnlyModelViewSet):
+    # use avg, max, min for aggregate
+
     queryset = PostLikes.objects.all(
     ).select_related('user', 'post').annotate(
-        post_title=F('post__title'),
-        post_author=F('post__author__first_name'),
+        likes_count=Count('post__post_likes'),
     )
+
     serializer_class = SerializerFactory(
         default=PostLikesRetrieveSerializer,
         list=PostLikesListSerializer,

@@ -19,9 +19,6 @@ class PostListSerializer(BasePostSerializer):
     class Meta(BasePostSerializer.Meta):
         fields = (
             'id',
-            'title',
-            'content',
-            'author',
             'created_at',
         )
 
