@@ -3,10 +3,11 @@ from django.contrib.auth.models import AbstractUser, UserManager
 from django.utils.translation import gettext_lazy as _
 from django.contrib.auth.base_user import BaseUserManager
 from ckeditor_uploader.fields import RichTextUploadingField
+
+from djangoProject import settings
 from djangoProject.utils.custom_fields import CustomVersatileImageField
-
-
-# Create your models here.
+from rest_framework_simplejwt.tokens import RefreshToken
+from django.core.mail import send_mail
 
 class CustomUserManager(BaseUserManager):
     def _create_user(self, email, password, **extra_fields):
@@ -66,7 +67,24 @@ class User(AbstractUser):
     def hidden_email(self):
         return self.email[:3] + '*' * (len(self.email[:-10]) - 3) + '@' + self.email.split('@')[1]
 
-
+    @property
+    def token(self):
+        refresh = RefreshToken.for_user(self)
+        return {
+            'refresh': str(refresh),
+            'access': str(refresh.access_token),
+        }
 
     def __str__(self):
         return self.email
+
+    def send_otp_email(self, uid, token):
+        send_mail(
+            subject='OTP',
+            message=f'Your OTP is {token}',
+            recipient_list=[self.email],
+            html_message=f'Your OTP is {token}',
+            from_email=settings.EMAIL_HOST_USER,
+        )
+
+
