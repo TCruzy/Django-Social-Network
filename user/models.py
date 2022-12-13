@@ -3,6 +3,7 @@ from django.contrib.auth.models import AbstractUser, UserManager
 from django.utils.translation import gettext_lazy as _
 from django.contrib.auth.base_user import BaseUserManager
 from ckeditor_uploader.fields import RichTextUploadingField
+from django.template.loader import render_to_string
 
 from djangoProject import settings
 from djangoProject.utils.custom_fields import CustomVersatileImageField
@@ -77,14 +78,3 @@ class User(AbstractUser):
 
     def __str__(self):
         return self.email
-
-    def send_otp_email(self, uid, token):
-        send_mail(
-            subject='OTP',
-            message=f'Your OTP is {token}',
-            recipient_list=[self.email],
-            html_message=f'Your OTP is {token}',
-            from_email=settings.EMAIL_HOST_USER,
-        )
-
-

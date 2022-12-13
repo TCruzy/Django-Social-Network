@@ -1,13 +1,16 @@
 from django.contrib.auth.models import update_last_login
+from django.core.mail import send_mail
+from django.template.loader import render_to_string
 from rest_framework import serializers
 from rest_framework.exceptions import AuthenticationFailed
-from rest_framework_simplejwt.settings import api_settings
 from django.utils.http import urlsafe_base64_encode
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from djangoProject import settings
 from user.models import User
 from versatileimagefield.serializers import VersatileImageFieldSerializer
-from user.utils.token_generators import OTPVerifyTokenGenerator
+from user.utils.token_generators import _OTPVerifyTokenGenerator
+
 
 class BaseUserSerializer(serializers.ModelSerializer):
     profile_picture = VersatileImageFieldSerializer(
@@ -36,53 +39,80 @@ class UserRetrieveSerializer(BaseUserSerializer):
         fields = '__all__'
 
 
-class OTPSerializer(serializers.Serializer):
-    code = serializers.IntegerField(required=True)
-    hash_key = serializers.CharField(required=True, max_length=255)
-
-    def validate(self, attrs):
-        code = attrs.get('code')
-        hash_key = attrs.get('hash_key')
-        user = User.objects.filter(otp_hash_key=hash_key).first()
-        if not user:
-            raise AuthenticationFailed({'message': 'Invalid OTP'})
-        if not OTPVerifyTokenGenerator().check_token(user, code):
-            raise AuthenticationFailed({'message': 'Invalid OTP'})
-        return {
-            'user': user,
-        }
-
-
-class CustomTokenObtainPairSerializer(serializers.Serializer):
-    email = serializers.EmailField(required=True)
-    password = serializers.CharField(required=True, write_only=True)
-    refresh = serializers.CharField(read_only=True)
-    access = serializers.CharField(read_only=True)
-
-    @classmethod
-    def get_token(cls, user):
-        return RefreshToken.for_user(user)
+class TokenCreateSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    password = serializers.CharField()
 
     def validate(self, attrs):
         email = attrs.get('email')
         password = attrs.get('password')
 
-        data = {}
-        try:
-            user = User.objects.get(email=email)
-            if user.check_password(password):
-                if user.is_active:
-                    refresh = self.get_token(user)
-                    data['refresh'] = str(refresh)
-                    data['access'] = str(refresh.access_token)
-                    if api_settings.UPDATE_LAST_LOGIN:
-                        update_last_login(None, user)
-                else:
-                    data['token'] = OTPVerifyTokenGenerator().make_token(user)
-                    data['uid'] = urlsafe_base64_encode(str(user.pk).encode())
-            else:
-                raise AuthenticationFailed({'password': 'Wrong password'})
-        except User.DoesNotExist:
-            raise AuthenticationFailed({'email': 'User does not exist'})
+        user = User.objects.filter(email=email).first()
+        if user is None:
+            raise AuthenticationFailed({'message': 'User not found'})
 
-        return data
+        if not user.check_password(password):
+            raise AuthenticationFailed({'message': 'Incorrect password'})
+
+        update_last_login(None, user)
+
+        refresh = RefreshToken.for_user(user)
+        access = refresh.access_token
+
+        return {
+            'refresh': str(refresh),
+            'access': str(access),
+            'user': UserRetrieveSerializer(user).data,
+        }
+
+
+class SignUpSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(
+        max_length=68,
+        min_length=6,
+        write_only=True
+    )
+    confirm_password = serializers.CharField(
+        max_length=68,
+        min_length=6,
+        write_only=True
+    )
+
+    def create(self, validated_data):
+        password = validated_data.get('password')
+        confirm_password = validated_data.get('confirm_password')
+        validated_data.pop('confirm_password')
+        if password != confirm_password:
+            raise serializers.ValidationError({'password': 'Passwords must match.'})
+
+        user = User.objects.create_user(**validated_data)
+        user.is_active = False
+        user.set_password(password)
+        user.save()
+
+        token = _OTPVerifyTokenGenerator().make_token(user)
+        uid = urlsafe_base64_encode(str(user.id).encode())
+        data = {
+            'user': user,
+            'url': f'{settings.FRONTEND_URL}/user/activate-account/{uid}/{token}',
+            'uid': uid,
+            'token': token,
+        }
+        send_mail(
+            subject='This is a email for account activation',
+            message=render_to_string('auth/activate_email.html', data),
+            from_email=settings.EMAIL_HOST_USER,
+            recipient_list=[user.email],
+        )
+
+        return user
+
+    class Meta:
+        model = User
+        fields = (
+            'email',
+            'first_name',
+            'last_name',
+            'password',
+            'confirm_password',
+        )
